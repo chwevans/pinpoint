@@ -1,0 +1,14 @@
+{application, pinpoint, [
+  {description, ""},
+  {vsn, "0.0.1"},
+  {registered, []},
+  {applications, [
+    kernel,
+    stdlib,
+    lager
+  ]},
+  {mod, {pinpoint, []}},
+  {modules, [pinpoint]},
+  {env, [
+  ]}
+]}.
