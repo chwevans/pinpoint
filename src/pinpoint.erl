@@ -1,3 +1,6 @@
+%%% A behaviour to store searchable data in an ETS table.
+%%% These can be started by supervisors with the following spec:
+%%%   [{Implementor, {pinpoint, start_link,[]}, permanent, brutal_kill, worker, [Implementor]}]
 -module(pinpoint).
 
 -behaviour(gen_server).
@@ -6,7 +9,9 @@
 -export([
   start_link/1,
   insert/2,
-  search/2
+  search/2,
+  delete/2,
+  count/2
 ]).
 
 %% gen_server callbacks
@@ -23,23 +28,30 @@
 %%% API
 %%%===================================================================
 
+-spec start_link(atom()) -> {ok, pid()}.
 start_link(DataSet) ->
   gen_server:start_link({local, DataSet}, ?MODULE, [DataSet], []).
 
+-spec insert(atom(), map()) -> ok.
 insert(DataSet, Data) when is_map(Data) ->
   BlownUpData = blow_up(DataSet, Data),
   ets:insert(DataSet, [BlownUpData]).
 
+-spec search(atom(), map() | tuple()) -> [map()].
 search(DataSet, Query) ->
-  MappedQuery = mapped_query(DataSet, Query),
-  {Exact, Condition} = maps:fold(fun
-    (Field, {Operator, Value}, {ExactMatch, ConditionMatch}) -> {ExactMatch, [{Operator, Field, Value} | ConditionMatch]};
-    (Field, Value, {ExactMatch, ConditionMatch}) -> {replace_match(ExactMatch, Field, Value), ConditionMatch}
-  end, {index_query_line(DataSet), []}, MappedQuery),
+  MatchSpec = build_spec(DataSet, Query),
+  Data = ets:select(DataSet, MatchSpec),
+  [combine(DataSet, D) || D <- Data].
 
-  CompleteMatch = [{list_to_tuple(Exact), Condition, ['$_']}],
-  Data = ets:select(DataSet, CompleteMatch),
-  {CompleteMatch, [combine(DataSet, D) || D <- Data]}.
+-spec delete(atom(), map() | tuple()) -> pos_integer().
+delete(DataSet, Query) ->
+  MatchSpec = build_spec(DataSet, Query),
+  ets:select_delete(DataSet, MatchSpec).
+
+-spec count(atom(), map() | tuple()) -> pos_integer().
+count(DataSet, Query) ->
+  MatchSpec = build_spec(DataSet, Query),
+  ets:select_count(DataSet, MatchSpec).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -114,3 +126,27 @@ replace_match(KeyMatches, Key, Value) ->
     (K) -> K
   end, KeyMatches).
 
+build_spec(DataSet, Query) when is_tuple(Query) ->
+  QueryLine = index_query_line(DataSet),
+  Fields = [time_inserted, data] ++ DataSet:indexed_fields(),
+  FieldToIndex = maps:from_list(lists:zip(Fields, QueryLine)),
+
+  Replace = fun(K) -> maps:get(K, FieldToIndex, K) end,
+
+  Fix = fun
+    Fix({Op, Q1, Q2}) when is_tuple(Q1) andalso is_tuple(Q2) -> {Op, Fix(Q1), Fix(Q2)};
+    Fix({Op, F1, F2}) -> {Op, Replace(F1), Replace(F2)};
+    Fix({Op, Q}) -> {Op, Fix(Q)}
+  end,
+
+  Condition = Fix(Query),
+  [{list_to_tuple(QueryLine), [Condition], ['$_']}];
+
+build_spec(DataSet, Query) ->
+  MappedQuery = mapped_query(DataSet, Query),
+  {Exact, Condition} = maps:fold(fun
+    (Field, {Operator, Value}, {ExactMatch, ConditionMatch}) -> {ExactMatch, [{Operator, Field, Value} | ConditionMatch]};
+    (Field, Value, {ExactMatch, ConditionMatch}) -> {replace_match(ExactMatch, Field, Value), ConditionMatch}
+  end, {index_query_line(DataSet), []}, MappedQuery),
+
+  [{list_to_tuple(Exact), Condition, ['$_']}].
