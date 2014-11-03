@@ -1,8 +1,15 @@
 -module(pp).
 
--compile(export_all).
 -export([
-
+  qand/2,
+  qor/2,
+  qnot/1,
+  eq/2,
+  neq/2,
+  lt/2,
+  gt/2,
+  lte/2,
+  gte/2
 ]).
 
 qand(Q1, Q2) -> {'andalso', Q1, Q2}.
