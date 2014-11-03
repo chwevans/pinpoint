@@ -1,6 +1,6 @@
 %%% A behaviour to store searchable data in an ETS table.
 %%% These can be started by supervisors with the following spec:
-%%%   [{Implementor, {pinpoint, start_link,[]}, permanent, brutal_kill, worker, [Implementor]}]
+%%%   {Implementor, {pinpoint, start_link, [Implementor]}, permanent, brutal_kill, worker, []}
 -module(pinpoint).
 
 -behaviour(gen_server).
